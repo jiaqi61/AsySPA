@@ -57,9 +57,9 @@ class PushSumSubgradientDescent(PushSumOptimizer):
         if synch is False:
             if delay is None:
                 # Bound below the time between two update to prevent ps_w from vanishing
-                self.delay = 1e-4 
+                self.delay = 5e-5 
             else:
-                self.delay = 1e-4 + delay
+                self.delay = 5e-5 + delay
         else:
             self.delay = 0
 
@@ -95,8 +95,9 @@ class PushSumSubgradientDescent(PushSumOptimizer):
             effective_itr = 1
 
         step_size = self.step_size / (effective_itr ** 0.5)
+        grad = self.sub_gradient(argmin_est)
 
-        return ps_n - (step_size * self.sub_gradient(argmin_est))
+        return ps_n - step_size * grad
 
 
     def minimize(self):
@@ -124,10 +125,12 @@ class PushSumSubgradientDescent(PushSumOptimizer):
 
         # Initialize sub-gradient descent push sum gossip
         ps_n = self.argmin_est
-        ps_w = 1.0
+        ps_w = 1 # To improve numerical stabability
         argmin_est = ps_n / ps_w
 
         itr = 0
+        
+        grad_max = ps_w
 
         log = self.log
         psga = self.ps_averager
@@ -138,8 +141,10 @@ class PushSumSubgradientDescent(PushSumOptimizer):
             from gossip_log import GossipLog
             l_argmin_est = GossipLog() # Log the argmin estimate
             l_ps_w = GossipLog() # Log the push sum weight
+            l_ps_n = GossipLog() # Log the push sum value
             l_argmin_est.log(argmin_est, itr)
             l_ps_w.log(ps_w, itr)
+            l_ps_n.log(ps_n, itr)
 
 
         if self.terminate_by_time is False:
@@ -179,9 +184,9 @@ class PushSumSubgradientDescent(PushSumOptimizer):
             # Update argmin estimate and take a step
             argmin_est = ps_result['avg']
             ps_n = self._gradient_descent_step(ps_n=ps_n,
-                                               argmin_est=argmin_est,
-                                               itr=itr,
-                                               start_time=start_time)
+                                                   argmin_est=argmin_est,
+                                                   itr=itr,
+                                                   start_time=start_time)
 
             # -- END Subgradient-Push update -- #
 
@@ -189,6 +194,7 @@ class PushSumSubgradientDescent(PushSumOptimizer):
             if log:
                 l_argmin_est.log(argmin_est, itr)
                 l_ps_w.log(ps_w, itr)
+                l_ps_n.log(ps_n, itr)
 
 
             # Update the termination flag
@@ -201,7 +207,8 @@ class PushSumSubgradientDescent(PushSumOptimizer):
 
         if log is True:
             return {"argmin_est": l_argmin_est,
-                    "ps_w": l_ps_w}
+                    "ps_w": l_ps_w,
+                    "ps_n": l_ps_n}
         else:
             return {"argmin_est": argmin_est,
                     "objective": objective(argmin_est),
@@ -219,15 +226,15 @@ if __name__ == "__main__":
 
         # Create objective function and its gradient
         np.random.seed(seed=UID)
-        x_start = np.random.randn(num_features, 1)
+        x_start = np.random.randn(num_features)
         a_m = np.random.randn(num_instances_per_node, num_features)
-        b_v = np.random.randn(num_instances_per_node, 1)
+        b_v = np.random.randn(num_instances_per_node)
         objective = lambda x: 0.5 * (np.linalg.norm(a_m.dot(x) - b_v))**2
         gradient = lambda x: a_m.T.dot(a_m.dot(x)-b_v)
         
         # Set the artificial delay used in asynchronous mode (seconds)
         delay = 1e-3*(UID+1)
-        delay = None
+#        delay = None
 
         pssgd = PushSumSubgradientDescent(objective=objective,
                                           sub_gradient=gradient,
@@ -254,10 +261,12 @@ if __name__ == "__main__":
         t = np.array([i[0] for i in l_argmin_est.history.values()])
         est = np.array([i[1] for i in l_argmin_est.history.values()])
         l_ps_w = loggers['ps_w']
+        l_ps_n = loggers['ps_n']
         ps_w = np.array([i[1] for i in l_ps_w.history.values()])
+        ps_n = np.array([i[1] for i in l_ps_n.history.values()])
         filepath = 'data/'+str(UID)+'.mat'
         sio.savemat(filepath, mdict={'A': a_m, 'b': b_v, 'itr': itr, 'time': t,
-                                     'ps_w': ps_w, 'estimate': est})
+                                     'ps_w': ps_w, 'ps_n': ps_n, 'estimate': est})
 
 
     # Run a demo where nodes minimize a sum of squares function

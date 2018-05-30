@@ -105,13 +105,13 @@ class PushSumGossipAverager(object):
         column = {}
         lo_p = 1.0 / (self.out_degree + 1.0)
         out_p = [1.0 / (self.out_degree + 1.0) for _ in range(self.out_degree)]
-        # lo_p = 0.8
-        # out_p = [0.2 / self.out_degree for _ in range(self.out_degree)]
+#        lo_p = 0.5
+#        out_p = [0.5 / self.out_degree for _ in range(self.out_degree)]
         column['lo_p'] = lo_p
         column['out_p'] = out_p
         return column
 
-    def push_messages_to_peers(self, peers, consensus_column, ps_w, ps_n):
+    def push_messages_to_peers(self, peers, consensus_column, data):
         """
         Send scaled push sum numerator and push sum weights to peers.
 
@@ -119,10 +119,13 @@ class PushSumGossipAverager(object):
         :type consensus_column: list[float]
         :type ps_w: float
         :type ps_n: float
+        :type ps_l: int
         :rtype: void
         """
+        (ps_w, ps_n, ps_l) = data
         for i, peer_uid in enumerate(peers):
-            push_message = np.append(consensus_column[i]*ps_n, consensus_column[i]*ps_w)
+            push_message = np.concatenate([consensus_column[i]*ps_n, 
+                                          [consensus_column[i]*ps_w], [ps_l]])
             _ = COMM.Ibsend(push_message, dest=peer_uid)
 
     def recieve_asynchronously(self):
@@ -134,26 +137,28 @@ class PushSumGossipAverager(object):
         itr = 0
         ps_w = 0
         ps_n = 0
+        ps_l = -1
         info = MPI.Status()
 
         while COMM.Iprobe(source=MPI.ANY_SOURCE, status=info):
 
             itr += 1
             # Receive message
-            data = np.empty(self.average.size + 1, dtype=np.float64)
+            data = np.empty(self.average.size + 2, dtype=np.float64)
             COMM.Recv(data, info.source)
-
-            ps_w += data[-1]
+            
+            ps_l = max(ps_l, data[-1])
+            ps_w += data[-2]
 
             # This is some logic to allow handling of both gossiped constant values and vectors
             try:
-                ps_n += data[:-1].reshape(self.average.shape)
+                ps_n += data[:-2].reshape(self.average.shape)
             except AttributeError:
                 ps_n += data[0]
 
             info = MPI.Status()
 
-        return {'num_messages': itr, 'ps_w': ps_w, 'ps_n': ps_n}
+        return {'num_messages': itr, 'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l}
 
     def receive_synchronously(self):
         """
@@ -163,6 +168,7 @@ class PushSumGossipAverager(object):
         """
         ps_w = 0
         ps_n = 0
+        ps_l = -1
         itr = 0
 
         for _ in range(self.in_degree):
@@ -181,24 +187,25 @@ class PushSumGossipAverager(object):
                 break
 
             # Receive message
-            data = np.empty(self.average.size + 1, dtype=np.float64)
+            data = np.empty(self.average.size + 2, dtype=np.float64)
             COMM.Recv(data, info.source)
 
             # Update if received a message
             itr += 1
 
-            ps_w += data[-1]
+            ps_l = max(ps_l, data[-1])
+            ps_w += data[-2]
             # This logic allows handling of gossiped constant values, vectors, and matrices
             try:
-                ps_n += data[:-1].reshape(self.average.shape)
+                ps_n += data[:-2].reshape(self.average.shape)
             except AttributeError:
                 ps_n += data[0]
 
             del info
 
-        return {'num_messages': itr, 'ps_w': ps_w, 'ps_n': ps_n}
+        return {'num_messages': itr, 'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l}
 
-    def gossip(self, gossip_value, ps_weight=1.0, just_probe=False, start_together=False):
+    def gossip(self, gossip_value, ps_weight=1.0, ps_loop=None, just_probe=False, start_together=False):
         """
         Perform the distribued gossip averaging (settings given by the instance parameters).
 
@@ -227,6 +234,10 @@ class PushSumGossipAverager(object):
         log = self.log
         ps_n = gossip_value # push sum numerator
         ps_w = ps_weight # push sum weight
+        if ps_loop is None:
+            ps_l = -1
+        else:
+            ps_l = ps_loop
         avg = ps_n / ps_w # push sum estimate
         itr = 0
 
@@ -237,7 +248,7 @@ class PushSumGossipAverager(object):
             total = np.empty(self.average.size, dtype=np.float64)
             COMM.Allreduce(gossip_value, total, op=MPI.SUM)
             avg = total / SIZE
-            return {"avg": avg, "ps_w" : ps_weight, "ps_n": avg, "rcvd_flag": True}
+            return {"avg": avg, "ps_w" : ps_weight, "ps_n": avg, "ps_l": ps_l, "rcvd_flag": True}
 
         if self.out_degree == len(self.peers):
             static_peers = True
@@ -250,9 +261,11 @@ class PushSumGossipAverager(object):
             l_avg = GossipLog()
             l_ps_w = GossipLog()
             l_ps_n = GossipLog()
+            l_ps_l = GossipLog()
             l_avg.log(avg, itr)
             l_ps_w.log(ps_w, itr)
             l_ps_n.log(ps_n, itr)
+            l_ps_l.log(ps_l, itr)
 
         if self.terminate_by_time is False:
             num_gossip_itr = self.termination_condition
@@ -287,10 +300,10 @@ class PushSumGossipAverager(object):
             lo_n = ps_n * lo_p
 
             # Conditions for numerical instability prevention
-            if (just_probe is False) and (rcvd_flag is True):
+            if (lo_w > 1e-3) and (just_probe is False) and (rcvd_flag is True):
                 if static_peers is False:
                     peers = self.choose_gossip_peers()
-                self.push_messages_to_peers(peers, out_p, ps_w, ps_n)
+                self.push_messages_to_peers(peers, out_p, (ps_w, ps_n, ps_l))
             else:
                 lo_w = ps_w
                 lo_n = ps_n
@@ -302,6 +315,7 @@ class PushSumGossipAverager(object):
 
             ps_w = lo_w + rcvd['ps_w']
             ps_n = lo_n + rcvd['ps_n']
+            ps_l = max(ps_l, rcvd['ps_l'])
 
             # If received at least one message, set external rcvd flag to high
             if rcvd['num_messages'] > 0:
@@ -315,6 +329,7 @@ class PushSumGossipAverager(object):
                 l_avg.log(avg, itr)
                 l_ps_w.log(ps_w, itr)
                 l_ps_n.log(ps_n, itr)
+                l_ps_l.log(ps_l, itr)
 
             if self.terminate_by_time is False:
                 condition = itr < num_gossip_itr
@@ -324,9 +339,10 @@ class PushSumGossipAverager(object):
         self.average = avg
 
         if log is True:
-            return {"avg": l_avg, "ps_w": l_ps_w, "ps_n": l_ps_n}
+            return {"avg": l_avg, "ps_w": l_ps_w, "ps_n": l_ps_n, "ps_l": l_ps_l}
         else:
-            return {"avg": avg, "ps_w" : ps_w, "ps_n": ps_n, "rcvd_flag": ext_rcvd_flag}
+            return {"avg": avg, "ps_w" : ps_w, "ps_n": ps_n,
+                    "rcvd_flag": ext_rcvd_flag, "ps_l": ps_l}
 
 
 if __name__ == "__main__":

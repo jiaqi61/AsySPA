@@ -7,8 +7,8 @@ Created on Fri Jun  1 16:43:27 2018
 
 import numpy as np
 import scipy.io as sio
-#from LogReg import LogisticRegression
-#from push_sum_gossip_asy_gradient import Push_Sum_Asy_Gradient
+#from logistic_regression import LogisticRegression
+#from asy_gradient_push import AsyGradientPush
 
 class dataset_covtype:
     
@@ -43,14 +43,15 @@ class dataset_covtype:
         mean_num = np.mean(self.samples[:10,:], axis = 1).reshape(-1,1)
         std_num = np.std(self.samples[:10,:], axis = 1).reshape(-1,1)
         
-        # Nomalization the data and append a constant to each instance
+        # Nomalization the data by subtracting the mean and dividing by the standard deviation
+        # of non-categorical features, and append a constant to each instance
         self.samples[:10,:] = (self.samples[:10,:] - mean_num) / std_num
         self.samples = np.vstack((self.samples, np.ones((1,self.n_s))))
     
-    def data_distribute(self, n = 5, folderpath = 'dataset_covtype/', filename = ''):
-        """ Divide the data into n subset """
+    def data_distribute(self, n, folderpath = 'dataset_covtype/', filename = ''):
+        """ Divide the data into n almost chunks """
         
-        per = np.random.permutation(self.n_s)
+        per = np.random.permutation(self.n_s) # permute the data
         samples = self.samples[:,per]
         labels = self.labels[:,per]
         samples_subset = np.array_split(samples, n, axis = 1)
@@ -62,8 +63,8 @@ class dataset_covtype:
     
 if __name__ == '__main__':
     
-    covtype = dataset_covtype()
+    covtype = dataset_covtype(filepath = './dataset_covtype/covtype.csv')
     covtype.data_preprocess()
-    covtype.data_distribute()
+    covtype.data_distribute(n = 5, folderpath = 'dataset_covtype/')
 
     

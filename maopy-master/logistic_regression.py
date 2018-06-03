@@ -8,11 +8,11 @@ Created on Thu May 31 16:24:25 2018
 import numpy as np
 
 class LogisticRegression:
-    """ Objective function and gradient of multi-classes logistic regression problem. """
+    """ Multi-classes logistic regression problem. """
     
     def __init__(self, samples, labels, reg = 1 ,dtype = np.float64):
         """ 
-        Initialize the problem with provided data. 
+        Initialize the problem with given data. 
         
         Parameters
         ----------
@@ -39,7 +39,7 @@ class LogisticRegression:
     
     def obj_func(self, x):
         """ 
-        The objective function of logistic regression. 
+        The objective function to be minimized. 
         
         Parameters
         ----------
@@ -58,7 +58,7 @@ class LogisticRegression:
     
     def gradient(self, x):
         """
-        The gradient of the objective function w.r.t x and y.
+        The gradient of the objective function w.r.t x.
         
         Parameters
         ----------
@@ -83,7 +83,7 @@ class LogisticRegression:
         
         return (-grad_lr + grad_r)
     
-    def minimizer(self, x_start = None, step_size = -1, max_ite = 1000, epi = 1e-3):
+    def minimizer(self, x_start = None, step_size = -1, max_ite = 1000, epi = 1e-2, log = False):
         """
         Minimize the logistic regression problem using a decaying stepsize
         
@@ -97,21 +97,28 @@ class LogisticRegression:
         if x_start is None:
             x_start = np.random.randn(self.n_f, self.n_c)
         if step_size == -1:
-            step_size = 1 / self.n_s # more instances, lager gradient, and thus smaller stepsize
+            step_size = 1 / self.n_s # more instances, smaller stepsize
         else:
             step_size = step_size / self.n_s
         x = x_start
+        x_history = np.asarray([x])
         for k in range(max_ite):
             grad = self.gradient(x)
-            grad_norm = np.linalg.norm(grad)
-            x = x - step_size / np.sqrt(k+1) * grad
+            grad_norm = np.linalg.norm(grad) / self.n_s
+            x = x - step_size / np.sqrt(k+1) * grad # Use the 1/sqrt(k) stepsize
+
+            # log the estimates
+            if log is True:
+                x_history = np.concatenate((x_history, [x]))
             
-            obj = self.obj_func(x)
-            print('k='+str(k),'func='+str(obj),'grad='+str(grad_norm))
+            # print the averaged value of objective function and gradient
+            if k % 5 == 0:
+                obj = self.obj_func(x)
+                print('k='+str(k),'func='+str(obj / self.n_s),'grad='+str(grad_norm))
             
-            if grad_norm < epi * self.n_s:
+            if grad_norm < epi:
                 break
-        return x
+        return (x, x_history)
     
 if __name__ == "__main__":
     
@@ -122,7 +129,8 @@ if __name__ == "__main__":
         # Create datasets
         labels = np.zeros((num_classes, num_instances))
         label_vec = np.random.randint(low = 0, high = num_classes, size = num_instances)
-        labels[label_vec, range(num_instances)] = 1
+        labels[label_vec, range(num_instances)] = 1 # one-hot labels
+
         samples = np.random.randn(num_features, num_instances)
         
         # Initialize the problem

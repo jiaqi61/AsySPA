@@ -31,7 +31,7 @@ NAME = GossipComm.name
 DEFAULT_LEARNING_RATE = 0.1 # Time in seconds
 
 
-class PushSumSubgradientDescent(PushSumOptimizer):
+class Push_Sum_Asy_Gradient(PushSumOptimizer):
     """ Distributed optimization using column stochastic mixing and greedy gradient descent. """
 
     # Inherit docstring
@@ -70,7 +70,7 @@ class PushSumSubgradientDescent(PushSumOptimizer):
         else:
             self.delay = 0
 
-        super(PushSumSubgradientDescent, self).__init__(objective=objective,
+        super(Push_Sum_Asy_Gradient, self).__init__(objective=objective,
                                                         sub_gradient=sub_gradient,
                                                         arg_start=arg_start,
                                                         synch=synch,
@@ -91,7 +91,7 @@ class PushSumSubgradientDescent(PushSumOptimizer):
         if self.constant_step_size is True:
             step_size = [self.step_size for _ in range(int(ps_l), int(ps_l_max+1))]
         else:
-            step_size = [self.step_size / (i ** 1 + 100) for i in range(int(ps_l), int(ps_l_max+1))]
+            step_size = [self.step_size / ((i+1) ** 0.5) for i in range(int(ps_l), int(ps_l_max+1))]
 
         stepsize = np.sum(step_size)
         grad = self.sub_gradient(argmin_est)
@@ -120,7 +120,7 @@ class PushSumSubgradientDescent(PushSumOptimizer):
                                "objective": float,
                                "sub_gradient": float)
         """
-        super(PushSumSubgradientDescent, self).minimize()
+        super(Push_Sum_Asy_Gradient, self).minimize()
 
         # Initialize sub-gradient descent push sum gossip
         ps_n = self.argmin_est
@@ -220,7 +220,7 @@ class PushSumSubgradientDescent(PushSumOptimizer):
 
 if __name__ == "__main__":
 
-    def demo(num_instances_per_node, num_features):
+    def demo_ls(num_instances_per_node, num_features):
         """
         Demo fo the use of the PushSumSubgradientDescent class.
 
@@ -275,5 +275,100 @@ if __name__ == "__main__":
                                      'estimate': est})
 
 
-    # Run a demo where nodes minimize a sum of squares function
-    demo(num_instances_per_node=1000, num_features=3)
+    def demo_lr(num_instances_per_node, num_features, num_classes):
+        """
+        Demo to apply the algorithm on a multiclass logistic regression problem
+        """
+        from LogReg import LogisticRegression
+        # Create objective function and its gradient
+        np.random.seed(seed=UID)
+        x_start = np.random.randn(num_features, num_classes)
+        labels = np.zeros((num_classes, num_instances_per_node))
+        label_vec = np.random.randint(low = 0, high = num_classes, size = num_instances_per_node)
+        labels[label_vec, range(num_instances_per_node)] = 1
+        samples = np.random.randn(num_features - 1, num_instances_per_node) + 2*label_vec
+        samples = np.vstack((samples, np.ones((1,num_instances_per_node))))
+        
+        lr = LogisticRegression(samples = samples, labels = labels)
+        objective = lr.obj_func
+        gradient = lr.gradient
+        
+        pd = Push_Sum_Asy_Gradient(objective=objective,
+                        sub_gradient=gradient,
+                        arg_start=x_start,
+                        synch=False,
+                        peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
+                        step_size= 5 / num_instances_per_node,
+                        terminate_by_time=True,
+                        termination_condition=300,
+                        log=True,
+                        in_degree=2,
+                        num_averaging_itr=1)
+
+        loggers = pd.minimize()
+        l_argmin_est = loggers['argmin_est']
+
+        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
+        
+        # Save the data into a mat file
+        itr = np.fromiter(l_argmin_est.history.keys(), dtype=float)
+        t = np.array([i[0] for i in l_argmin_est.history.values()])
+        est = np.array([i[1] for i in l_argmin_est.history.values()])
+        l_ps_w = loggers['ps_w']
+        l_ps_n = loggers['ps_n']
+        ps_w = np.array([i[1] for i in l_ps_w.history.values()])
+        ps_n = np.array([i[1] for i in l_ps_n.history.values()])
+        filepath = 'data/'+str(UID)+'.mat'
+        sio.savemat(filepath, mdict={'samples': samples, 'labels': labels, 'itr': itr, 'time': t,
+                                     'ps_w': ps_w, 'ps_n': ps_n, 'estimate': est})
+
+    def demo_lr_covtype(filepath = 'dataset_covtype/'):
+        """
+        Demo to apply the algorithm to a multiclass logistic regression problem on covtype dataset
+        """
+        from LogReg import LogisticRegression
+        
+        # Load the data
+        filename = filepath + str(UID) + '.mat'
+        data = sio.loadmat(filename)
+        samples = data['samples']
+        labels = data['labels']
+        
+        lr = LogisticRegression(samples = samples, labels = labels)
+        objective = lr.obj_func
+        gradient = lr.gradient
+        
+        x_start = np.random.randn(lr.n_f, lr.n_c)
+        
+        pd = Push_Sum_Asy_Gradient(objective=objective,
+                        sub_gradient=gradient,
+                        arg_start= x_start,
+                        synch=False,
+                        peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
+                        step_size= 1 / lr.n_s,
+                        terminate_by_time=True,
+                        termination_condition=36000,
+                        log=True,
+                        in_degree=2,
+                        num_averaging_itr=1)
+
+        loggers = pd.minimize()
+        l_argmin_est = loggers['argmin_est']
+
+        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
+        
+        # Save the data into a mat file
+        itr = np.fromiter(l_argmin_est.history.keys(), dtype=float)
+        t = np.array([i[0] for i in l_argmin_est.history.values()])
+        est = np.array([i[1] for i in l_argmin_est.history.values()])
+        l_ps_w = loggers['ps_w']
+        l_ps_n = loggers['ps_n']
+        ps_w = np.array([i[1] for i in l_ps_w.history.values()])
+        ps_n = np.array([i[1] for i in l_ps_n.history.values()])
+        filepath = 'data/'+str(UID)+'.mat'
+        sio.savemat(filepath, mdict={'samples': samples, 'labels': labels, 'itr': itr, 'time': t,
+                                     'ps_w': ps_w, 'ps_n': ps_n, 'estimate': est})
+                
+                
+    # Run a demo
+    demo_lr_covtype()

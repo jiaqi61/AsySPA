@@ -124,8 +124,10 @@ class PushSumGossipAverager(object):
         """
         (ps_w, ps_n, ps_l) = data
         for i, peer_uid in enumerate(peers):
-            push_message = np.concatenate([consensus_column[i]*ps_n, 
-                                          [consensus_column[i]*ps_w], [ps_l]])
+#            push_message = np.concatenate([consensus_column[i]*ps_n, 
+#                                          [consensus_column[i]*ps_w], [ps_l]])
+            push_message = np.concatenate([consensus_column[i]*ps_n.ravel(), 
+                                          [consensus_column[i]*ps_w, ps_l]])
             _ = COMM.Ibsend(push_message, dest=peer_uid)
 
     def recieve_asynchronously(self):

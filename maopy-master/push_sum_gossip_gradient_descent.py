@@ -234,7 +234,7 @@ if __name__ == "__main__":
         
         # Set the artificial delay used in asynchronous mode (seconds)
         delay = 1e-3*(UID+1)
-#        delay = None
+        delay = None
 
         pssgd = PushSumSubgradientDescent(objective=objective,
                                           sub_gradient=gradient,

@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
     def demo(num_instances_per_node, num_features):
         """
-        Demo fo the use of the PushSumSubgradientDescent class.
+        Demo to the use of the PushSumSubgradientDescent class.
 
         To run the demo, run the following from the multi_agent_optimization directory CLI:
             mpiexec -n $(num_nodes) python -m do4py.push_sum_gossip_gradient_descent
@@ -203,5 +203,6 @@ if __name__ == "__main__":
 
         l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=True)
 
+        
     # Run a demo where nodes minimize a sum of squares function
     demo(num_instances_per_node=5000, num_features=100)

@@ -49,20 +49,19 @@ class AsyGradientPush(PushSumOptimizer):
                  num_averaging_itr=1,
                  constant_step_size=False,
                  all_reduce=False,
-                 delay = None):
+                 delay=None,
+                 exact_convergence=True):
         """ Initialize the gossip optimization settings. """
 
         self.constant_step_size = constant_step_size
+        self.exact_convergence = exact_convergence
         
         # Set the artificial delays (seconds)
-        if synch is False:
-            if delay is None:
-                # Bound below the time between two update to prevent ps_w from vanishing
-                self.delay = 5e-5 
-            else:
-                self.delay = 5e-5 + delay
+        if delay is None:
+            # Bound below the time between two update to prevent ps_w from vanishing
+            self.delay = 5e-5 
         else:
-            self.delay = 0
+            self.delay = 5e-5 + delay
 
         super(AsyGradientPush, self).__init__(objective=objective,
                                                         sub_gradient=sub_gradient,
@@ -78,14 +77,20 @@ class AsyGradientPush(PushSumOptimizer):
                                                         num_averaging_itr=num_averaging_itr,
                                                         all_reduce=all_reduce)
 
-    def _gradient_descent_step(self, ps_n, ps_l, ps_l_max, argmin_est):
+    def _gradient_descent_step(self, ps_n, ps_l, ps_l_max, argmin_est, itr):
         """ Take step in direction of negative gradient, and return the new domain point. """
 
         # Diminshing step-size: 1 / sqrt(k). The total step-size is determined by ps_l and ps_l_max.
         if self.constant_step_size is True:
-            step_size = [self.step_size for _ in range(int(ps_l), int(ps_l_max+1))]
+            if self.exact_convergence is True:
+                step_size = [self.step_size for _ in range(int(ps_l), int(ps_l_max+1))]
+            else:
+                step_size = self.step_size
         else:
-            step_size = [self.step_size / ((i+1) ** 0.5) for i in range(int(ps_l), int(ps_l_max+1))]
+            if self.exact_convergence is True:
+                step_size = [self.step_size / ((i+1) ** 0.5) for i in range(int(ps_l), int(ps_l_max+1))]
+            else:
+                step_size = self.step_size / (itr ** 0.5)
 
         stepsize = np.sum(step_size)
         grad = self.sub_gradient(argmin_est)
@@ -167,13 +172,13 @@ class AsyGradientPush(PushSumOptimizer):
             if self.synch is True:
                 COMM.Barrier()
 
-            # Random artificial delays
-            time.sleep(self.delay*(1+np.random.rand()))
+            time.sleep(self.delay*(1+np.random.rand())) # Random artificial delays
             
             itr += 1
             
-            if print_info is True:
-                print('UID='+str(UID),'itr='+str(itr),'ps_l='+str(ps_l), flush = True)
+            if (print_info is True) and (itr % 10 == 0):
+                print('UID='+str(UID),'\titr='+str(itr),'\tps_l='+str(int(ps_l)),
+                      '\tExact_Conv='+str(self.exact_convergence), flush = True)
 
             # -- START Subgradient-Push update -- #
 
@@ -188,8 +193,12 @@ class AsyGradientPush(PushSumOptimizer):
             ps_n = self._gradient_descent_step(ps_n=ps_n,
                                                ps_l = ps_l, 
                                                ps_l_max = ps_l_max,
-                                               argmin_est=argmin_est)
-            ps_l = ps_l_max + 1
+                                               argmin_est=argmin_est,
+                                               itr = itr)
+            if self.exact_convergence is True:
+                ps_l = ps_l_max + 1
+            else:
+                ps_l = -1
             # -- END Subgradient-Push update -- #
 
             # Log the varaibles
@@ -236,27 +245,29 @@ if __name__ == "__main__":
         gradient = lambda x: a_m.T.dot(a_m.dot(x)-b_v)
         
         # Set the artificial delay used in asynchronous mode (seconds)
-        delay = 1e-3*(UID+1)
+        delay = 0.1*(UID+1)
 #        delay = None
 
         pssgd = AsyGradientPush(objective=objective,
                                           sub_gradient=gradient,
                                           arg_start=x_start,
                                           synch=False,
-                                          peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
-                                          step_size=1e-2,
+#                                          peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
+                                          peers=[(UID + 1) % SIZE],
+                                          step_size= 1e-2/ num_instances_per_node,
+                                          constant_step_size=True,
                                           terminate_by_time=True,
-                                          termination_condition=10,
+                                          termination_condition=300,
                                           log=True,
-                                          in_degree=2,
+                                          in_degree=1,
                                           num_averaging_itr=1,
-                                          constant_step_size=False,
-                                          delay = delay)
+                                          delay = delay,
+                                          exact_convergence=False)
 
-        loggers = pssgd.minimize()
+        loggers = pssgd.minimize(print_info=True)
         l_argmin_est = loggers['argmin_est']
 
-        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
+#        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
         
         # Save the data into a .mat file
         itr = np.fromiter(l_argmin_est.history.keys(), dtype=float)
@@ -268,7 +279,7 @@ if __name__ == "__main__":
         ps_w = np.array([i[1] for i in l_ps_w.history.values()])
         ps_n = np.array([i[1] for i in l_ps_n.history.values()])
         ps_l = np.array([i[1] for i in l_ps_l.history.values()])
-        filepath = 'data/'+str(UID)+'.mat'
+        filepath = 'data/least_square_nonexact/'+str(UID)+'.mat'
         sio.savemat(filepath, mdict={'A': a_m, 'b': b_v, 'itr': itr, 'time': t,
                                      'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l,
                                      'estimate': est})
@@ -309,7 +320,7 @@ if __name__ == "__main__":
                         in_degree=2,
                         num_averaging_itr=1)
 
-        loggers = pd.minimize()
+        loggers = pd.minimize(print_info=True)
         l_argmin_est = loggers['argmin_est']
 
         l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
@@ -376,4 +387,5 @@ if __name__ == "__main__":
                                      'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l, 'estimate': est})
  
     # Run a demo
-    demo_lr_covtype()
+#    demo_lr_covtype()
+    demo_ls(num_instances_per_node = 5000, num_features = 30)

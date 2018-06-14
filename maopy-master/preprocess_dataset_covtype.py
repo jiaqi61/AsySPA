@@ -19,8 +19,8 @@ class dataset_covtype:
             data_cov = np.genfromtxt(filepath, delimiter=',')
         
         self.samples = data_cov.T[:-1,:] 
-        labels_vec = data_cov.T[-1,:]
-        self.labels = self.vec2onehot(labels_vec)   
+        self.labels_vec = data_cov.T[-1,:]
+        self.labels = self.vec2onehot(self.labels_vec)   
         
         self.n_s = self.samples.shape[1]
         self.n_f = self.samples.shape[0]
@@ -49,11 +49,12 @@ class dataset_covtype:
         self.samples = np.vstack((self.samples, np.ones((1,self.n_s))))
     
     def data_distribute(self, n, folderpath = 'dataset_covtype/', filename = ''):
-        """ Divide the data into n almost chunks """
+        """ Divide the data into n chunks """
         
-        per = np.random.permutation(self.n_s) # permute the data
-        samples = self.samples[:,per]
-        labels = self.labels[:,per]
+        indices = self.labels_vec.argsort()[::-1]  # sort the labels in descending order    
+#        indices = np.random.permutation(self.n_s) # permute the data
+        samples = self.samples[:,indices]
+        labels = self.labels[:,indices]
         samples_subset = np.array_split(samples, n, axis = 1)
         labels_subset = np.array_split(labels, n, axis = 1)
         for i in range(n):

@@ -4,7 +4,7 @@ Created on Thu May 31 16:24:25 2018
 
 @author: zhangjiaqi
 """
-
+import time
 import numpy as np
 
 class LogisticRegression:
@@ -46,11 +46,17 @@ class LogisticRegression:
         x: 2-D array. The weights matrix to be estimated with 
            size (num_features, num_classes)
         """
+        """
+        Version 1: Very slow
         lr = 0 # logistic regression term
         for i in range(self.n_s):
             exp_l = [np.exp(x[:,j].dot(self.samples[:,i])) for j in range(self.n_c)]
             temp  = np.log((np.dot(exp_l, self.labels[:,i]) / np.sum(exp_l))) # temp variable
             lr += temp
+        """
+        num = np.exp(x.T.dot(self.samples)) # numerator
+        den = np.sum(num, axis = 0) # denominator
+        lr = np.sum(np.log(num.T[self.labels.astype(bool).T] / den))
         
         r = 0.5 * self.reg * np.linalg.norm(x, ord='fro') ** 2 # regularization term
         
@@ -65,25 +71,43 @@ class LogisticRegression:
         x: 2-D array. The weights matrix to be estimated with 
            size (num_features, num_classes)
         """
+        """
+        Version 1: Very slow
         grad_lr = 0 # the gradient of the logistic regression term
         for i in range(self.n_s):
-            # the denominator
-            
-#            x_s = [x[:,j].dot(self.samples[:,i]) for j in range(self.n_c)]
-#            x_s = x_s - max(x_s) + 1 # To avoid overflow
-#            exp_l = np.exp(x_s) + 1e-6 # To avoid underflow
-            
-            exp_l = [np.exp(x[:,j].dot(self.samples[:,i])) for j in range(self.n_c)]
-            
+            # the denominator   
+            exp_l = [np.exp(x[:,j].dot(self.samples[:,i])) for j in range(self.n_c)]            
             grad_l = np.outer(self.samples[:,i], self.labels[:,i]) - \
                      np.outer(self.samples[:,i], exp_l / np.sum(exp_l))
             grad_lr += grad_l
-        
+        """
+        """
+        Version 2: Encounter underflow in division
+        temp = np.exp(x.T.dot(self.samples)).T # avoid underflow
+        grad_lr = self.samples.dot(self.labels.T - temp / np.sum(temp, axis = 1).reshape(-1,1))
+        """
+        """
+        Version 3
+        temp = np.exp(x.T.dot(self.samples)).T 
+        temp2 = temp * np.exp(-np.log(np.sum(temp, axis = 1).reshape(-1,1)))
+        grad_lr = self.samples.dot(self.labels.T - temp2)
+        """
+        temp2  = x.T.dot(self.samples)
+        temp2 = temp2 - np.max(temp2)
+        temp = np.exp(temp2).T  # avoid underflow
+        grad_lr = self.samples.dot(self.labels.T - temp / np.sum(temp, axis = 1).reshape(-1,1))
+      
         grad_r = self.reg * x # the gradient of the regularization term
         
         return (-grad_lr + grad_r)
     
-    def minimizer(self, x_start = None, step_size = -1, max_ite = 1000, epi = 1e-2, log = False):
+    def minimizer(self, x_start = None, 
+                  step_size = -1, 
+                  terminate_by_time = False, 
+                  termination_condition=1000,
+                  epi = 1e-3,
+                  log = False, 
+                  constant_stepsize = False):
         """
         Minimize the logistic regression problem using a decaying stepsize
         
@@ -102,23 +126,36 @@ class LogisticRegression:
             step_size = step_size / self.n_s
         x = x_start
         x_history = np.asarray([x])
-        for k in range(max_ite):
+        t = 0
+        itr = 0
+        t_start = time.time()
+        condition = True
+        while(condition):
+            itr += 1
             grad = self.gradient(x)
             grad_norm = np.linalg.norm(grad) / self.n_s
-            x = x - step_size / np.sqrt(k+1) * grad # Use the 1/sqrt(k) stepsize
-
+            if constant_stepsize is False:
+                x = x - step_size / (itr ** 0.5) * grad # Use the 1/sqrt(k) stepsize
+            else:
+                x = x - step_size * grad
             # log the estimates
             if log is True:
                 x_history = np.concatenate((x_history, [x]))
+                t = np.append(t, time.time() - t_start)
             
             # print the averaged value of objective function and gradient
-            if k % 5 == 0:
+            if itr % 20 == 0:
                 obj = self.obj_func(x)
-                print('k='+str(k),'func='+str(obj / self.n_s),'grad='+str(grad_norm))
+                print('k='+str(itr),'func='+str(obj / self.n_s),'grad='+str(grad_norm),
+                      flush = True)
             
-            if grad_norm < epi:
-                break
-        return (x, x_history)
+            if terminate_by_time is True:
+                condition = t[-1] < termination_condition
+            else:
+                condition = itr < termination_condition   
+            condition = condition and grad_norm > epi
+            
+        return (x, x_history, t)
     
 if __name__ == "__main__":
     

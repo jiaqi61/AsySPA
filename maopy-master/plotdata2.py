@@ -271,7 +271,7 @@ def plot5():
     f_value /= 3
     label = r'3 agents'
     plt.semilogy(t, f_value - f_best, label = label, linestyle = '--') 
-    ax = plt.gca()
+    
     plt.xlabel('Time (s)')
     plt.ylabel('$f(X)-f^\star$')
 #    plt.title('Synchronous and asynchronous SPA')
@@ -325,5 +325,73 @@ def plot7():
     plt.savefig("./figs/fig12.pdf", bbox_inches='tight')
     plt.close()
     
-for i in range(8):
+def plot9():
+    evenly_select = lambda m, n: np.rint( np.linspace( 1, n, min(m,n) ) - 1 ).astype(int)
+    # centralized 1/5 CPU
+    plotdata = sio.loadmat('./data/centralized_5agents_8/centralized_0.2_result_constant_step_0.1.mat')
+    t = plotdata['time'][0]
+    indices = evenly_select(50,t.size)
+    t = t[indices]
+    f_value = np.asarray([lr.obj_func(j) for j in plotdata['estimate'][indices]]) / lr.n_s
+    label = r'cen:1/5'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '--', marker = None, markevery = 8)       
+    # centralized 1/3 CPU
+    plotdata = sio.loadmat('./data/centralized_5agents_8/centralized_0.33_result_constant_step_0.1.mat')
+    t = plotdata['time'][0]
+    indices = evenly_select(50,t.size)
+    t = t[indices]
+    f_value = np.asarray([lr.obj_func(j) for j in plotdata['estimate'][indices]]) / lr.n_s
+    label = r'cen:1/3'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '--')        
+    # centralized 1/2 CPU
+    plotdata = sio.loadmat('./data/centralized_5agents_8/centralized_0.5_result_constant_step_0.1.mat')
+    t = plotdata['time'][0]
+    indices = evenly_select(50,t.size)
+    t = t[indices]
+    f_value = np.asarray([lr.obj_func(j) for j in plotdata['estimate'][indices]]) / lr.n_s
+    label = r'cen:1/2'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '--')   
+    # distributed over 5 agents
+    f_value = 0
+    plotdata = sio.loadmat('./data./5_dis_result_exact_conv_constant_step_0.1_same_freq_nodelay/plotdata.mat')
+    for i in range(len(plotdata.keys()) - 3):       # 3 irrevalent terms
+        t = plotdata['Agent '+ str(i)][0]['time'][0].T
+        name = 'Agent '+ str(i)
+        f_value += plotdata[name][0]['f_value'][0][0] / lr.n_s
+    f_value /= 5
+    label = r'dis:5'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '-') 
+    # distributed over 3 agents
+    f_value = 0
+    plotdata = sio.loadmat('./data./3_dis_result_exact_conv_constant_step_0.1_same_freq_nodelay/plotdata.mat')
+    for i in range(len(plotdata.keys()) - 3):       # 3 irrevalent terms
+        t = plotdata['Agent '+ str(i)][0]['time'][0].T
+        name = 'Agent '+ str(i)
+        f_value += plotdata[name][0]['f_value'][0][0] / lr.n_s
+    f_value /= 3
+    label = r'dis:3'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '-')     
+    # distributed over 7 agents
+    f_value = 0
+    plotdata = sio.loadmat('./data./7_dis_result_exact_conv_constant_step_0.1_same_freq_nodelay/plotdata.mat')
+    i = 0
+    for key in plotdata.keys():       # 3 irrevalent terms
+        try:
+            t = plotdata[key][0]['time'][0].T
+            i += 1
+        except:
+            continue
+        f_value += plotdata[key][0]['f_value'][0][0] / lr.n_s
+    f_value /= i
+    label = r'dis:7'
+    plt.semilogy(t, f_value - f_best, label = label, linestyle = '-')
+    
+    plt.xlabel('Time (s)')
+    plt.ylabel(r'$f(\bar X(t))-\hat{f}^\star$')
+    plt.title('Training error decay with time')
+    plt.legend()
+    plt.savefig("./figs/fig14.pdf", bbox_inches='tight')
+    plt.close()
+
+for i in range(9):
     eval('plot'+str(i+1)+'()')

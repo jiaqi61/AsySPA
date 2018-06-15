@@ -17,28 +17,24 @@ UID = GossipComm.uid
 NAME = GossipComm.name
 
 filepath = './dataset_covtype/'
-samples = []
-labels = []
-for i in range(1):
-    data = sio.loadmat(filepath+str(i)+'.mat')
-    samples = np.append(samples, data['samples'].ravel(order = 'F'))
-    labels = np.append(labels, data['labels'].ravel(order = 'F'))
-    
-samples = samples.reshape((data['samples'].shape[0],-1), order = 'F')
-labels = labels.reshape((data['labels'].shape[0],-1), order = 'F')
+
+data = sio.loadmat(filepath+'covtype.mat')
+samples = data['samples']
+labels = data['labels']
+
 
 lr = LogisticRegression(samples = samples, labels = labels)
 est, est_history, t = lr.minimizer(x_start = None,
-                                step_size = 8,
+                                step_size = 0.1,
                                 terminate_by_time=True,
-                                termination_condition=3000,
+                                termination_condition=1500,
                                 log = True,
-                                constant_stepsize = False)
+                                constant_stepsize = True)
 #print(str(est), flush=True)
 
 # save the result
 if UID == 0:
-    filepath = 'data/centralized_5agents_8/centralized_result.mat'
+    filepath = 'data/centralized_5agents_8/centralized_0.5_result_constant_step_0.1.mat'
     sio.savemat(filepath, mdict={'estimate': est_history,
                                  'time': t})
 

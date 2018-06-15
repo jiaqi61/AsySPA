@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 """
+Demo to apply the AsyGradientPush algorithm to a multiclass logistic regression problem 
+on covtype dataset
+
+To run the demo, run the following:
+    mpiexec -n $(num_nodes) python distributed_asy_logistic_regression.py
+
 Created on Sun Jun  3 17:00:07 2018
 
 @author: zhangjiaqi
@@ -13,16 +19,16 @@ import asy_gradient_push
 
 UID = asy_gradient_push.UID
 SIZE = asy_gradient_push.SIZE
-delay = 0.1*((5-UID)**1.5)
-#delay = 0.4
+#delay = 0.1*((5-UID)**1.5)
+delay = 0
 
-def demo_lr_covtype(filepath = 'dataset_covtype/data_partition_5/'):
+def demo_lr_covtype(filepath = 'dataset_covtype/data_partition_3/'):
     """
     Demo to apply the AsyGradientPush algorithm to a multiclass logistic regression problem 
     on covtype dataset
 
-    To run the demo, run the following from the multi_agent_optimization directory CLI:
-        mpiexec -n $(num_nodes) python -m do4py.push_sum_gossip_gradient_descent
+    To run the demo, run the following:
+        mpiexec -n $(num_nodes) python distributed_asy_logistic_regression.py
     """
     from logistic_regression import LogisticRegression
     
@@ -32,6 +38,7 @@ def demo_lr_covtype(filepath = 'dataset_covtype/data_partition_5/'):
     samples = data['samples']
     labels = data['labels']
     
+    # initialize the problem
     lr = LogisticRegression(samples = samples, labels = labels)
     objective = lr.obj_func
     gradient = lr.gradient
@@ -44,24 +51,24 @@ def demo_lr_covtype(filepath = 'dataset_covtype/data_partition_5/'):
                     synch=False,
 #                    peers=[(UID + 1) % SIZE, (UID - 1) % SIZE],
                     peers=[(UID + 1) % SIZE],
-                    step_size= 8 / (lr.n_s * 5),
-                    constant_step_size = False,
+                    step_size= 0.1 / (lr.n_s * 5),
+                    constant_step_size = True,
                     terminate_by_time=True,
-                    termination_condition=3000,
+                    termination_condition=1500,
                     log=True,
                     in_degree=2,
                     num_averaging_itr=1,
                     delay = delay,
-                    exact_convergence=False)
-
+                    exact_convergence=True)
+    
+    # start the optimization
     loggers = pd.minimize(print_info = True)
-    l_argmin_est = loggers['argmin_est']
-
+#    l_argmin_est = loggers['argmin_est']
 #    l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
     
     # Save the data into a mat file
     data_save(samples, labels, loggers, 
-              filepath = 'data/higher_connectivity_nonexact_8_undirected/')
+              filepath = 'data/3_dis_result_exact_conv_constant_step_0.1_same_freq_nodelay/')
             
 def data_save(samples, labels, loggers, filepath = 'data/'):
     """ Save the data into a .mat file. """
@@ -83,5 +90,5 @@ def data_save(samples, labels, loggers, filepath = 'data/'):
     except Exception as e:
         print(e)
 
-# Run a demo
+# Solve the logistic regression problem on covtype dataset
 demo_lr_covtype()

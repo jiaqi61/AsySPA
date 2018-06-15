@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """
+Construct a multi-class logistic regression problem.
+
 Created on Thu May 31 16:24:25 2018
 
 @author: zhangjiaqi
@@ -31,7 +33,7 @@ class LogisticRegression:
         self.labels = np.asarray(labels, dtype = np.int)
         (self.n_f, self.n_s) = self.samples.shape # numbers of features and samples
         self.n_c = self.labels.shape[0] # numbers of classes
-        assert self.n_s == self.labels.shape[1], "The number of samples doesn't match"
+        assert self.n_s == self.labels.shape[1], "Samples and labels should have the same columns"
         if reg < 0:
             reg = 1
         self.reg = reg
@@ -46,19 +48,12 @@ class LogisticRegression:
         x: 2-D array. The weights matrix to be estimated with 
            size (num_features, num_classes)
         """
-        """
-        Version 1: Very slow
-        lr = 0 # logistic regression term
-        for i in range(self.n_s):
-            exp_l = [np.exp(x[:,j].dot(self.samples[:,i])) for j in range(self.n_c)]
-            temp  = np.log((np.dot(exp_l, self.labels[:,i]) / np.sum(exp_l))) # temp variable
-            lr += temp
-        """
         num = np.exp(x.T.dot(self.samples)) # numerator
         den = np.sum(num, axis = 0) # denominator
         lr = np.sum(np.log(num.T[self.labels.astype(bool).T] / den))
         
-        r = 0.5 * self.reg * np.linalg.norm(x, ord='fro') ** 2 # regularization term
+        # regularization term
+        r = 0.5 * self.reg * np.linalg.norm(x, ord='fro') ** 2 
         
         return (-lr + r)
     
@@ -71,30 +66,9 @@ class LogisticRegression:
         x: 2-D array. The weights matrix to be estimated with 
            size (num_features, num_classes)
         """
-        """
-        Version 1: Very slow
-        grad_lr = 0 # the gradient of the logistic regression term
-        for i in range(self.n_s):
-            # the denominator   
-            exp_l = [np.exp(x[:,j].dot(self.samples[:,i])) for j in range(self.n_c)]            
-            grad_l = np.outer(self.samples[:,i], self.labels[:,i]) - \
-                     np.outer(self.samples[:,i], exp_l / np.sum(exp_l))
-            grad_lr += grad_l
-        """
-        """
-        Version 2: Encounter underflow in division
-        temp = np.exp(x.T.dot(self.samples)).T # avoid underflow
-        grad_lr = self.samples.dot(self.labels.T - temp / np.sum(temp, axis = 1).reshape(-1,1))
-        """
-        """
-        Version 3
-        temp = np.exp(x.T.dot(self.samples)).T 
-        temp2 = temp * np.exp(-np.log(np.sum(temp, axis = 1).reshape(-1,1)))
-        grad_lr = self.samples.dot(self.labels.T - temp2)
-        """
-        temp2  = x.T.dot(self.samples)
-        temp2 = temp2 - np.max(temp2)
-        temp = np.exp(temp2).T  # avoid underflow
+        temp0  = x.T.dot(self.samples)
+        temp0 = temp0 - np.max(temp0) # To avoid underflow
+        temp = np.exp(temp0).T  
         grad_lr = self.samples.dot(self.labels.T - temp / np.sum(temp, axis = 1).reshape(-1,1))
       
         grad_r = self.reg * x # the gradient of the regularization term
@@ -116,7 +90,12 @@ class LogisticRegression:
         x_start: 2D array with size (num_features, num_classes). Initial point of x.
         step_size: Positive scalar. The initial stepsize.
         max_ite: Positive integer. The max number of iterations.
-        epi: Positive scalar. Algorithm stop is the norm of gradient is smaller then epi
+        terminate_by_time: Algorithm terminates by time or the number of iterations
+        termination_condition: If terminate_by_time is true, then the algorithm run at most termination_condition seconds.
+                                Otherwise, the algorithm run at most termination_condition iterations.
+        epi: Positive scalar. Algorithm stops immediately if the norm of gradient is smaller then epi
+        log: Whether to log the history.
+        constant_stepsize: Whether to use a constant stepsize.
         """
         if x_start is None:
             x_start = np.random.randn(self.n_f, self.n_c)
@@ -126,11 +105,13 @@ class LogisticRegression:
             step_size = step_size / self.n_s
         x = x_start
         x_history = np.asarray([x])
-        t = 0
-        itr = 0
+        t = 0 # running time
+        itr = 0 # iterations
         t_start = time.time()
-        condition = True
-        while(condition):
+        condition = True # terminating condition
+        
+        # start the optimization loop 
+        while condition:
             itr += 1
             grad = self.gradient(x)
             grad_norm = np.linalg.norm(grad) / self.n_s
@@ -144,18 +125,25 @@ class LogisticRegression:
                 t = np.append(t, time.time() - t_start)
             
             # print the averaged value of objective function and gradient
-            if itr % 20 == 0:
+            if itr % 20 == 0: # print every 20 iterations
                 obj = self.obj_func(x)
-                print('k='+str(itr),'func='+str(obj / self.n_s),'grad='+str(grad_norm),
+                print('k='+str(itr),
+                      '\ttime='+str(int(time.time() - t_start)),
+                      '\tfunc='+str(obj / self.n_s),
+                      '\tgrad='+str(grad_norm),
                       flush = True)
             
+            # update the terminating condition
             if terminate_by_time is True:
                 condition = t[-1] < termination_condition
             else:
                 condition = itr < termination_condition   
             condition = condition and grad_norm > epi
-            
-        return (x, x_history, t)
+        
+        if log is True:
+            return (x, x_history, t)
+        else:
+            return x
     
 if __name__ == "__main__":
     

@@ -54,11 +54,12 @@ class AsyGradientPush(PushSumOptimizer):
         """ Initialize the gossip optimization settings. """
 
         self.constant_step_size = constant_step_size
-        self.exact_convergence = exact_convergence
+        self.exact_convergence = exact_convergence # exact convergence uses the algorithm in the paper
         
         # Set the artificial delays (seconds)
         if delay is None:
-            # Bound below the time between two update to prevent ps_w from vanishing
+            # Bound below the time between two updates to prevent ps_w from vanishing
+            # and increase numerical stabality
             self.delay = 5e-5 
         else:
             self.delay = 5e-5 + delay
@@ -80,7 +81,9 @@ class AsyGradientPush(PushSumOptimizer):
     def _gradient_descent_step(self, ps_n, ps_l, ps_l_max, argmin_est, itr):
         """ Take step in direction of negative gradient, and return the new domain point. """
 
-        # Diminshing step-size: 1 / sqrt(k). The total step-size is determined by ps_l and ps_l_max.
+        # Diminshing step-size: 1 / sqrt(k). 
+        # The total step-size in exact convergence case is determined by ps_l and ps_l_max.
+        # The total step-size in nonexact convergence case is determined by itr
         if self.constant_step_size is True:
             if self.exact_convergence is True:
                 step_size = [self.step_size for _ in range(int(ps_l), int(ps_l_max+1))]
@@ -104,7 +107,7 @@ class AsyGradientPush(PushSumOptimizer):
 
         Procedure:
         1) Gossip: push_sum_gossip([ps_n, ps_w])
-        2) Update: ps_result = push_sum_gossip([ps_n, ps_w, ps_l])
+        2) Update (exact convergence): ps_result = push_sum_gossip([ps_n, ps_w, ps_l])
             2.a) ps_n = ps_result[ps_n]
             2.b) ps_w = ps_result[ps_w]
             2.c) ps_l_max = ps_result['ps_l']
@@ -155,30 +158,30 @@ class AsyGradientPush(PushSumOptimizer):
             condition = itr < num_gossip_itr
         else:
             gossip_time = self.termination_condition
-            end_time = time.time() + gossip_time # End time of optimization
-            condition = time.time() < end_time
-
-        # Goes high if a message was not received in the last gossip round
-        just_probe = False
+            start_time = time.time()
+            end_time = start_time + gossip_time # End time of optimization
+            condition = True
 
         # Start optimization at the same time
         COMM.Barrier()
-
-        start_time = time.time()
 
         # Optimization loop
         while condition:
 
             if self.synch is True:
                 COMM.Barrier()
-
-            time.sleep(self.delay*(1+np.random.rand())) # Random artificial delays
+                
+            # Add random artificial delays
+            time.sleep(self.delay*(1+np.random.rand())) 
             
             itr += 1
             
             if (print_info is True) and (itr % 10 == 0):
-                print('UID='+str(UID),'\titr='+str(itr),'\tps_l='+str(int(ps_l)),
-                      '\tExact_Conv='+str(self.exact_convergence), flush = True)
+                print('UID=' + str(UID),
+                      '\ttime=' + str(int(time.time()-start_time))+'s',
+                      '\titr=' + str(itr),
+                      '\tps_l=' + str(int(ps_l)),
+                      '\texact_conv=' + str(self.exact_convergence), flush = True)
 
             # -- START Subgradient-Push update -- #
 
@@ -231,10 +234,10 @@ if __name__ == "__main__":
 
     def demo_ls(num_instances_per_node, num_features):
         """
-        Demo of the use of the AsyGradientPush class to a least square problem.
+        Demo of the use of the AsyGradientPush class on a least square problem.
 
-        To run the demo, run the following from the multi_agent_optimization directory CLI:
-            mpiexec -n $(num_nodes) python -m do4py.push_sum_gossip_gradient_descent
+        To run the demo, run the following:
+            mpiexec -n $(num_nodes) python asy_gradient_push.py
         """
         # Create objective function and its gradient
         np.random.seed(seed=UID)
@@ -246,13 +249,11 @@ if __name__ == "__main__":
         
         # Set the artificial delay used in asynchronous mode (seconds)
         delay = 0.1*(UID+1)
-#        delay = None
 
         pssgd = AsyGradientPush(objective=objective,
                                           sub_gradient=gradient,
                                           arg_start=x_start,
                                           synch=False,
-#                                          peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
                                           peers=[(UID + 1) % SIZE],
                                           step_size= 1e-2/ num_instances_per_node,
                                           constant_step_size=True,
@@ -263,13 +264,14 @@ if __name__ == "__main__":
                                           num_averaging_itr=1,
                                           delay = delay,
                                           exact_convergence=False)
-
+        
+        # start the optimization
         loggers = pssgd.minimize(print_info=True)
         l_argmin_est = loggers['argmin_est']
 
-#        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
+        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
         
-        # Save the data into a .mat file
+        # Save the result data into a .mat file
         itr = np.fromiter(l_argmin_est.history.keys(), dtype=float)
         t = np.array([i[0] for i in l_argmin_est.history.values()])
         est = np.array([i[1] for i in l_argmin_est.history.values()])
@@ -282,110 +284,6 @@ if __name__ == "__main__":
         filepath = 'data/least_square_nonexact/'+str(UID)+'.mat'
         sio.savemat(filepath, mdict={'A': a_m, 'b': b_v, 'itr': itr, 'time': t,
                                      'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l,
-                                     'estimate': est})
-
-
-    def demo_lr(num_instances_per_node, num_features, num_classes):
-        """
-        Demo of the use of the AsyGradientPush class to a logistic regression problem.
-
-        To run the demo, run the following from the multi_agent_optimization directory CLI:
-            mpiexec -n $(num_nodes) python -m do4py.push_sum_gossip_gradient_descent
-        """
-        from logistic_regression import LogisticRegression
-        # Create dataset
-        np.random.seed(seed=UID)
-        x_start = np.random.randn(num_features, num_classes)
-        # Create one-hot labels
-        labels = np.zeros((num_classes, num_instances_per_node))
-        label_vec = np.random.randint(low = 0, high = num_classes, size = num_instances_per_node)
-        labels[label_vec, range(num_instances_per_node)] = 1
-        # Create instances
-        samples = np.random.randn(num_features - 1, num_instances_per_node) + 2*label_vec
-        samples = np.vstack((samples, np.ones((1,num_instances_per_node))))
-        # Create objective function and gradient
-        lr = LogisticRegression(samples = samples, labels = labels)
-        objective = lr.obj_func
-        gradient = lr.gradient
-        
-        pd = AsyGradientPush(objective=objective,
-                        sub_gradient=gradient,
-                        arg_start=x_start,
-                        synch=False,
-                        peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
-                        step_size= 5 / num_instances_per_node,
-                        terminate_by_time=True,
-                        termination_condition=300,
-                        log=True,
-                        in_degree=2,
-                        num_averaging_itr=1)
-
-        loggers = pd.minimize(print_info=True)
-        l_argmin_est = loggers['argmin_est']
-
-        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
-        
-        # Save the data into a mat file
-        data_save(samples, labels, loggers, filepath = 'data/')
-
-    def demo_lr_covtype(filepath = 'dataset_covtype/'):
-        """
-        Demo to apply the AsyGradientPush algorithm to a multiclass logistic regression problem 
-        on covtype dataset
-
-        To run the demo, run the following from the multi_agent_optimization directory CLI:
-            mpiexec -n $(num_nodes) python -m do4py.push_sum_gossip_gradient_descent
-        """
-        from logistic_regression import LogisticRegression
-        
-        # Load the dataset
-        filename = filepath + str(UID) + '.mat'
-        data = sio.loadmat(filename)
-        samples = data['samples']
-        labels = data['labels']
-        
-        lr = LogisticRegression(samples = samples, labels = labels)
-        objective = lr.obj_func
-        gradient = lr.gradient
-        
-        x_start = np.random.randn(lr.n_f, lr.n_c)
-        
-        pd = AsyGradientPush(objective=objective,
-                        sub_gradient=gradient,
-                        arg_start= x_start,
-                        synch=False,
-                        peers=[(UID + 1) % SIZE, (UID + 2) % SIZE],
-                        step_size= 10 / lr.n_s,
-                        terminate_by_time=True,
-                        termination_condition=6,
-                        log=True,
-                        in_degree=2,
-                        num_averaging_itr=1)
-
-        loggers = pd.minimize()
-        l_argmin_est = loggers['argmin_est']
-
-        l_argmin_est.print_gossip_value(UID, label='argmin_est', l2=False)
-        
-        # Save the data into a mat file
-        data_save(samples, labels, loggers, filepath = 'data/')
-                
-    def data_save(samples, labels, loggers, filepath = 'data/'):
-        """ Save the data into a .mat file. """
-        l_argmin_est = loggers['argmin_est']
-        itr = np.fromiter(l_argmin_est.history.keys(), dtype=float)
-        t = np.array([i[0] for i in l_argmin_est.history.values()])
-        est = np.array([i[1] for i in l_argmin_est.history.values()])
-        l_ps_w = loggers['ps_w']
-        l_ps_n = loggers['ps_n']
-        l_ps_l = loggers['ps_l']
-        ps_w = np.array([i[1] for i in l_ps_w.history.values()])
-        ps_n = np.array([i[1] for i in l_ps_n.history.values()])
-        ps_l = np.array([i[1] for i in l_ps_l.history.values()])
-        filename = filepath + str(UID) + '.mat'
-        sio.savemat(filename, mdict={'samples': samples, 'labels': labels, 'itr': itr, 'time': t,
-                                     'ps_w': ps_w, 'ps_n': ps_n, 'ps_l': ps_l, 'estimate': est})
- 
+                                     'estimate': est}) 
     # Run a demo
-#    demo_lr_covtype()
     demo_ls(num_instances_per_node = 5000, num_features = 30)

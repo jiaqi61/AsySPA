@@ -25,7 +25,7 @@ python ./asyspa/preprocess_dataset_covtype.py --n $(num_nodes) --file $(dataset_
 This will preprocess the data and divide it into `num_nodes`  parts. Then, run the following command to start distributed training
 
 ```bash
-mpiexec -np $(num_nodes) -bind-to core -allow-run-as-root python ./asyspa/distributed_asy_logistic_regression.py
+mpiexec -np $(num_nodes) -bind-to core -allow-run-as-root python ./asyspa/distributed_asy_logistic_regression.py --data_dir ./dataset_covtype/data_partition_$(num_nodes) --save_dir ./result/core_$(num_nodes)
 ```
 
 This will train the classifier for 3000 seconds in default, and you can change it by passing some arguments. See the file for details.

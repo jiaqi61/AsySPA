@@ -14,7 +14,7 @@ The `-bind-to core` is optional, which let the MPI binds each process to a core,
 
 The command above will distributedly solve the following problem using the AsySPA
 
-![tex](http://latex.codecogs.com/gif.latex?\\text{minimize}_{x\\in\\mathbb{R}^{10}} \\sum_{i=1}^{num\\_nodes}\\|A_i^{200\\times10}x-b_i^{200}\\|^2) 
+![tex](http://latex.codecogs.com/gif.latex?\\text{minimize}_{x\\in\\mathbb{R}^{10}}\\sum_{i=1}^{num\\_nodes}\\|A_i^{200\\times10}x-b_i^{200}\\|^2) 
 
 where the data is randomly generated.
 

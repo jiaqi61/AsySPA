@@ -128,7 +128,7 @@ def data_save(samples, labels, loggers, filepath = 'data/'):
 @click.command()
 @click.option('--data_dir', type=str, help='path to dataset')
 @click.option('--save_dir', type=str, help='path to save the result')
-@click.option('--run_time', type=float, default=60, help='path to save the result')
+@click.option('--run_time', type=float, default=300, help='path to save the result')
 @click.option('--delay_power', type=float, default=None, help='time between two activation is 0.03*UID^delay_power')
 @click.option('--step_size', type=float, default=0.1,help='stepsize used in gradient descent')
 @click.option('--num_outdegrees',type=int, default=-1, help='number of out-neighbors of one core')

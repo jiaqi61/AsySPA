@@ -10,11 +10,11 @@ The codes are tested on Linux (Ubuntu 16.04) with OpenMPI and Python 3.6.
 ```bash
 mpiexec -np $(num_nodes) -bind-to core -allow-run-as-root python ./asyspa/asy_gradient_push.py
 ```
-The `-bind-to core` is optional, which let the MPI bind processes to cores, and hence the  `num_nodes`  should not be larger then the cores in your machine.
+The `-bind-to core` is optional, which let the MPI binds each process to a core, and hence the  `num_nodes`  should not be larger than the number of cores in your machine.
 
 The command above will distributedly solve the following problem using the AsySPA
 
-![tex](https://latex.codecogs.com/png.download?%5Ctext%7Bminimize%7D_%7Bx%5Cin%5Cmathbb%7BR%7D%5E%7B10%7D%7D%20%5Csum_%7Bi%3D1%7D%5E%7Bnum%5C_nodes%7D%5C%7CA_i%5E%7B200%5Ctimes10%7Dx-b_i%5E%7B200%7D%5C%7C%5E2) 
+![tex](http://latex.codecogs.com/gif.latex?\\text{minimize}_{x\\in\\mathbb{R}^{10}} \\sum_{i=1}^{num\\_nodes}\\|A_i^{200\\times10}x-b_i^{200}\\|^2) 
 
 where the data is randomly generated.
 

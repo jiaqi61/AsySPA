@@ -10,7 +10,7 @@ The codes are tested on Linux (Ubuntu 16.04) with OpenMPI and Python 3.6.
 ```bash
 mpiexec -np $(num_nodes) -bind-to core -allow-run-as-root python ./asyspa/asy_gradient_push.py
 ```
-The `-bind-to core` is optional, which let the MPI binds each process to a core, and hence the  `num_nodes`  should not be larger than the number of cores in your machine.
+The `-bind-to core` is optional, which tells the MPI to bind each process to a core, and hence the  `num_nodes`  should not be larger than the number of cores in your machine.
 
 The command above will distributedly solve the following problem using the AsySPA
 
